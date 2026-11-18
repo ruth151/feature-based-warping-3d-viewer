@@ -63,17 +63,17 @@ Source line $P'=(64,128)$, $Q'=(192,128)$.
      Rotated & $(64,128)$ & $(64,96)$\\
      Doubled & $(128,64)$ & $(144,64)$\\\bottomrule
    \end{tabular}\end{center}
-   \begin{figure}[h]\centering\small
-     \begin{minipage}[t]{.42\linewidth}\centering
+   \begin{figure}[h]\centering\footnotesize
+     \begin{minipage}[t]{.235\linewidth}\centering
        \includegraphics[width=\linewidth]{A1a_src_crop.png}\\
        source, $P'Q'=(64,128)\to(192,128)$\end{minipage}\hfill
-     \begin{minipage}[t]{.42\linewidth}\centering
+     \begin{minipage}[t]{.235\linewidth}\centering
        \includegraphics[width=\linewidth]{A1a_translated_out.png}\\
-       translated, $PQ=(84,148)\to(212,148)$\end{minipage}\\[4pt]
-     \begin{minipage}[t]{.42\linewidth}\centering
+       translated, $PQ=(84,148)\to(212,148)$\end{minipage}\hfill
+     \begin{minipage}[t]{.235\linewidth}\centering
        \includegraphics[width=\linewidth]{A1a_rotated_out.png}\\
        rotated, $PQ=(128,64)\to(128,192)$\end{minipage}\hfill
-     \begin{minipage}[t]{.42\linewidth}\centering
+     \begin{minipage}[t]{.235\linewidth}\centering
        \includegraphics[width=\linewidth]{A1a_doubled_out.png}\\
        doubled, $PQ=(0,128)\to(256,128)$\end{minipage}
      \caption{A1a. The source image with its line $P'Q'$, and the three outputs with their destination
@@ -299,53 +299,191 @@ Key step $15^\circ$ and a reset (\texttt{r}) before each run, unless stated othe
    by the translation to the center), so that its center stays at $(2,0,0)$.}
 
 \experiment{B2a}{Rotations about world axes and object axes}
-  {\todo{}}
-  {\todo{Euler angles and quaternion at the end of each run}}
-  {\todo{}}
+  {Run: \texttt{x} three times, then \texttt{y} three times, $15^\circ$ per press, from a reset.
+   \emph{World axes:} the three \texttt{x} presses pitch the nose down by $45^\circ$ about the fixed $X$ axis; the
+   \texttt{y} presses then swing the airplane about the vertical world axis, so I expect the nose to point down,
+   towards $+x$ and $+z$, with the wings still level. \emph{Object axes:} the \texttt{y} presses turn about the
+   airplane's own $y$ axis, which is already tilted by the pitch, so I expect the wings to bank and a final
+   orientation different from the first run.}
+  {\begin{center}\small
+   \begin{tabular}{lcc}\toprule
+     & world axes (\texttt{w}) & object axes (\texttt{o})\\\midrule
+     quaternion $[w,x,y,z]$ & $[0.8536,\,0.3536,\,0.3536,\,-0.1464]$ & $[0.8536,\,0.3536,\,0.3536,\,0.1464]$\\
+     Euler angles $(a_x,a_y,a_z)$ & $(45,\,45,\,0)$ & $(54.74,\,30,\,35.26)$\\
+     nose direction & $(0.50,\,-0.71,\,0.50)$ & $(0.71,\,-0.50,\,0.50)$\\
+     wing axis (the airplane's $x$) & $(0.71,\,0,\,-0.71)$ & $(0.71,\,0.50,\,-0.50)$\\\bottomrule
+   \end{tabular}\end{center}
+   In the world-axes run the nose points $45^\circ$ below the horizontal and the wing axis is horizontal (level
+   wings). In the object-axes run the nose points $30^\circ$ below the horizontal and the wing axis is tilted by
+   $30^\circ$ (banked wings). The values come from applying the viewer's update rules with my \texttt{quat},
+   \texttt{quat\_mul} and \texttt{quat\_to\_matrix}.}
+  {In the world-axes mode $q\leftarrow q_\Delta q$, so every new turn is applied last, about a fixed axis: the
+   run is $R_y(45^\circ)R_x(45^\circ)$, the pitch of $45^\circ$ happens first and the swing about the vertical axis
+   leaves the wing axis horizontal. In the object-axes mode $q\leftarrow q\,q_\Delta$, so every new turn is applied
+   first, in the airplane's own frame: the run is $R_x(45^\circ)R_y(45^\circ)$, which turns about the already pitched
+   $y$ axis and therefore banks the wings. The two rules do not commute, so the same keys give different
+   orientations.}
 
 \experiment{B2b}{Gimbal lock}
-  {\todo{}}
-  {\todo{}}
-  {\todo{}}
+  {With $a_y=90^\circ$ the nose points along the world $X$ axis. I predicted that moving $a_x$ pitches the nose up
+   and down, that $a_z$ does the same motion, so that one of them is redundant, that the turn that is lost is
+   a yaw about the vertical axis, and that a $15^\circ$ roll about the nose changes only one Euler angle by $15^\circ$.}
+  {The nose points along $+X$ and $a_x$ and $a_z$ both turn the airplane about the same horizontal world axis ($Z$),
+   in opposite directions, while $a_y$ turns it about the vertical $Y$ axis. Numerically
+   $\texttt{euler}(a_x,90,a_z)=\texttt{euler}(0,90,a_z-a_x)$, so the orientation depends only on $a_z-a_x$:
+   $\texttt{euler}(40,90,15)=\texttt{euler}(0,90,-25)$ and $\texttt{euler}(10,90,10)=\texttt{euler}(0,90,0)$
+   (equal to $10^{-9}$). The $3\times3$ matrix whose columns are the rotation axes of small changes of
+   $a_x,a_y,a_z$ has rank $2$ at $a_y=90^\circ$ (rank $3$ at $a_y=30^\circ$), and the axis that no combination
+   reaches is the world $X$ axis, i.e.\ the nose: a roll about the nose cannot be made by small changes of the
+   angles. Pressing \texttt{z} once in the object-axes mode rolls the airplane by $15^\circ$ about its nose and
+   changes the Euler angles from $(0,90,0)$ to $(90,75,90)$ (quaternion $[0.7011,0.0923,0.7011,0.0923]$) although
+   the nose stays along $+X$. The yaw is \emph{not} lost, and all three angles jump, so two of my predictions
+   were wrong.}
+  {At $a_y=90^\circ$, $R_y(90^\circ)$ turns the $x$ axis into the $-z$ axis, so $R_z(a_z)R_y(90^\circ)R_x(a_x)$
+   contains two rotations about the same line and only their difference matters: three sliders give only two
+   degrees of freedom (gimbal lock). The roll about the nose is the missing degree of freedom, so to reach an
+   orientation that differs from the locked one by a roll, the angles have to change by a large amount
+   ($a_x$ and $a_z$ by $90^\circ$ each and $a_y$ by $15^\circ$ in the run above): the Euler angles of a rotation are
+   not a continuous function of the rotation near $a_y=\pm90^\circ$, which is why the displayed angles jump
+   while the airplane only turns by $15^\circ$.}
 
 \experiment{B3}{Interpolating rotations}
-  {\todo{}}
-  {\todo{axis and angle of the Euler interpolation at $t=0.25,0.5,0.75$; quaternion of key 1}}
-  {\todo{}}
+  {Key 0 is $(0,0,0)$ and key 1 is $(180,180,180)$ (\texttt{--key1 180,180,180}). I predicted that the two keys
+   are the same orientation, but that slerp rotates by $180^\circ$ about some axis and that the Euler
+   interpolation does nothing. I was not sure about the angle of the Euler interpolation at $t=0.5$.}
+  {Key 1 is the quaternion $[1,0,0,0]$, the same as key 0:
+   $R_z(180^\circ)R_y(180^\circ)R_x(180^\circ)=\mathrm{diag}(-1,-1,1)\,\mathrm{diag}(-1,1,-1)\,\mathrm{diag}(1,-1,-1)=I$,
+   and $k\,j\,i=k(-k)=1$ in quaternions. The slerp keeps the airplane still ($q=[1,0,0,0]$, rotation angle $0$ for
+   every $t$), while the Euler interpolation tumbles away and comes back. From $\mathrm{tr}R=1+2\cos\theta$ and the
+   antisymmetric part of $R$, for the angles $(180t,180t,180t)$:
+   \begin{center}\small
+   \begin{tabular}{cccc}\toprule
+     $t$ & angles & rotation angle $\theta$ & axis\\\midrule
+     $0.25$ & $(45,45,45)$ & $64.74^\circ$ & $(0.357,\,0.863,\,0.357)$\\
+     $0.50$ & $(90,90,90)$ & $90^\circ$ & $(0,\,1,\,0)$\\
+     $0.75$ & $(135,135,135)$ & $64.74^\circ$ & $(-0.357,\,0.863,\,-0.357)$\\\bottomrule
+   \end{tabular}\end{center}
+   The rotation angle of the Euler path grows from $0$ to $90^\circ$ at $t=0.5$ and returns to $0$ at $t=1$.
+   Both of my predictions about the two methods were wrong, in the opposite direction.}
+  {The three half-turns cancel, so key 1 is the same orientation as key 0 and the shortest rotation between them is
+   $0^\circ$: slerp, which follows the great arc between the two quaternions, has nowhere to go. The Euler
+   interpolation interpolates the three \emph{angles}, not the orientations, so at $t=0.5$ the airplane is at
+   $(90,90,90)$, a $90^\circ$ turn about the vertical axis, and it only returns to the start at $t=1$; its path is
+   not the shortest one, and it depends on the chosen angle representation.}
 
 \experiment{B4a}{The pipeline in reverse: the image center}
-  {\todo{$o$ and $d$ for $(400,300)$ in the start view; where a click there moves the airplane}}
-  {\todo{}}
-  {\todo{}}
+  {For the center pixel $(400,300)$ of the start view, $o$ should be a point just in front of the eye (on the near
+   plane) and $d$ the viewing direction, towards the origin; a click there should move the airplane to the
+   origin $(0,0,0)$.}
+  {Start view: azimuth $35^\circ$, elevation $20^\circ$, distance $10$, $\mathrm{fovy}=40^\circ$, aspect $4/3$,
+   near $0.1$, far $200$, so the eye is at $(5.390,\,3.420,\,7.698)$. \texttt{pixel\_ray}$(M,400,300)$ gives
+   $o=(5.336,\,3.386,\,7.621)$, at distance $0.1$ from the eye, and $d=(-0.539,\,-0.342,\,-0.770)=-\mathrm{eye}/10$,
+   towards the origin; the ray meets the plane $y=0$ at $(0,0,0)$, which is where a click at the center
+   puts the airplane. Two other clicks: the pixel $(250,420)$ moves the center to $(0.679,\,0,\,3.236)$ and
+   $(600,380)$ to $(2.854,\,0,\,0.736)$, and \texttt{project} of these points gives back exactly $(250,420)$ and
+   $(600,380)$ (depth $0.987$).}
+  {The center pixel is where the camera looks, so its ray runs along the viewing direction from the near plane
+   through the target, the origin, which lies on the ground plane. \texttt{project} followed by \texttt{pixel\_ray}
+   of the same pixel returns a point on the same line, so the point of the ground that a click selects projects
+   back to the pixel that was clicked.}
 
 \experiment{B4b}{Rays of the four corners}
-  {\todo{}}
-  {\todo{perspective and orthographic cases}}
-  {\todo{}}
+  {I predicted that the four corner rays of the perspective camera share the origin (wrong: it is the eye), and that
+   with the orthographic camera the rays are parallel and only their points $o$ differ.}
+  {\emph{Perspective.} The corners $(0,0)$, $(800,0)$, $(0,600)$, $(800,600)$ have directions
+   $(-0.862,0,-0.507)$, $(-0.182,0,-0.983)$, $(-0.740,-0.585,-0.333)$, $(-0.060,-0.585,-0.809)$, and the four
+   rays all pass through the eye $(5.390,3.420,7.698)$ (distance to it $<10^{-15}$); their points $o$ are four
+   different points of the near plane around the eye, e.g.\ $(5.289,3.420,7.638)$ for $(0,0)$.
+   \emph{Orthographic} (view volume $9.706\times7.279$, as in the viewer): all four directions equal
+   $(-0.539,-0.342,-0.770)$, the viewing direction, and the points $o$ are the corners of the near face of the
+   view volume, $(0.647,6.806,9.384)$, $(8.597,6.806,3.817)$, $(2.075,-0.034,11.424)$, $(10.025,-0.034,5.857)$.}
+  {A perspective camera projects towards one center, the eye, so every ray starts there and the rays fan out;
+   an orthographic camera projects along one fixed direction, so the rays are parallel. A pixel gives a ray and
+   not a point because the projection discards depth: all points of a line through the eye land on the same pixel.
+   \texttt{pixel\_ray} divides by $w$ for the same reason as \texttt{project}: $M^{-1}(x,y,\mathrm{depth},1)^T$ is
+   homogeneous, with $w=10$ at the image center for the perspective camera ($w=1$ for the orthographic one,
+   whose matrix is affine), and the point is $(X,Y,Z)/w$.}
 
 \experiment{B5a}{Chase camera: what is fixed in the image}
-  {\todo{}}
-  {\todo{$VM$ for two different poses}}
-  {\todo{points vs.\ directions in \texttt{look\_at}}}
+  {The airplane stays fixed in the image (seen from behind and above) and the world (ground, axes) moves around
+   it; $VM$ never changes, because the camera has a fixed place in the airplane's own frame; in
+   \texttt{look\_at} the eye and the target are points and \texttt{up} is a direction.}
+  {For two poses, $M_1=T(3,0,-2)\,\mathrm{euler}(20,30,40)$ and $M_2=T(-4,1,5)\,\mathrm{euler}(-70,10,100)$
+   (and for $M=I$), $V M$ is the same matrix to $10^{-9}$:
+   \[
+   VM=\begin{pmatrix}-1&0&0&0\\0&0.9701&0.2425&0\\0&0.2425&-0.9701&-8.2462\\0&0&0&1\end{pmatrix}
+   =\texttt{look\_at}\big((0,2,-8),(0,0,0),(0,1,0)\big),
+   \]
+   with $0.9701=8/\sqrt{68}$, $0.2425=2/\sqrt{68}$ and $8.2462=\sqrt{68}$. If \texttt{up} is transformed as a point
+   (for $M_1$: $(2.53,0.83,-1.70)$ instead of the direction $(-0.47,0.83,0.30)$), the image is rolled and the airplane's
+   $+y$ no longer points up (it maps to $(0.92,-0.29,0.24)$); if the eye is transformed with $w=0$, the camera is not
+   at the airplane's $(0,2,-8)$ any more ($VM\,(0,2,-8)=(-2.77,-1.35,-1.88)\ne0$).}
+  {$VM$ takes the airplane's own coordinates to eye coordinates. Since the camera sits at the fixed place
+   $(0,2,-8)$ of the airplane's frame and looks at its center with the airplane's $+y$ up, this matrix is the
+   same for every pose, so the airplane never moves in the image and only the world moves. The eye and the target
+   are positions, so they get the translation of $M$ ($w=1$), while \texttt{up} is only an orientation, so
+   it is rotated by $M$ and must not be translated ($w=0$).}
 
 \experiment{B5b}{Chase camera: key behaviour}
-  {\todo{}}
-  {\todo{}}
-  {\todo{}}
+  {I was not sure which mode it is. From the structure of the update rules I expect the object-axes mode, because the
+   chase camera is fixed to the airplane's own frame.}
+  {For each key, I applied the $15^\circ$ turn in each mode at 4 random poses (with the chase camera, $V'=$
+   \texttt{chase\_view}$(M')$) and looked at how the eye coordinates of every world point change,
+   $G=V'V^{-1}$. In the object-axes mode $G$ is the same for all poses (largest difference between the 4 poses
+   $<4\cdot10^{-15}$ for \texttt{x}, \texttt{y} and \texttt{z}); in the world-axes mode it differs from pose to pose
+   (largest difference $3.2$, $2.5$, $2.2$). E.g.\ for \texttt{x} in the object-axes mode $G$ is a rotation by
+   $15^\circ$ about the image's horizontal axis, together with a fixed shift.}
+  {In the object-axes mode $q\leftarrow q\,q_\Delta$, so $M'=M\,R_\Delta$; with $VM=\mathrm{const}=C$ we get
+   $V'=C\,R_\Delta^{-1}M^{-1}=(C R_\Delta^{-1}C^{-1})\,V$, i.e.\ the world moves in the image by a matrix that does not
+   depend on the pose: every key always turns the image the same way. In the world-axes mode $q\leftarrow q_\Delta q$,
+   so $M'=R_\Delta M$ and $V'=C\,M^{-1}R_\Delta^{-1}=V R_\Delta^{-1}$, which gives $G=V R_\Delta^{-1}V^{-1}$, a turn about
+   a world axis that appears in a different direction in the image for every pose.}
 
 \experiment{B6a}{Find the bug: the three images}
-  {\todo{}}
-  {\todo{function and error for each of \texttt{bug1.png}, \texttt{bug2.png}, \texttt{bug3.png}; reproduced images}}
-  {\todo{}}
+  {Compared with the correct start view (Y up, X to the lower right, Z to the lower left), I predicted that
+   \texttt{bug3.png} is mirrored top-to-bottom, and the same for \texttt{bug1.png} and \texttt{bug2.png}.}
+  {\texttt{bug3.png} is the correct picture flipped top-to-bottom (mean difference $0.09$ grey levels), while
+   \texttt{bug1.png} and \texttt{bug2.png} are the correct picture rotated by $180^\circ$ in the image plane
+   ($0.20$ for bug~1), so my prediction for these two was wrong. Planting one error in a copy of the
+   function reproduces each image to within $0.04$ grey levels (script \texttt{repro\_bugs.py}, Figure~\ref{fig:b6}):
+   \textbf{bug 1}: \texttt{perspective}, $P_{3,2}=+1$ instead of $-1$ (so $w=+z$ instead of $-z$);
+   \textbf{bug 2}: \texttt{look\_at}, the cross product in the wrong order, $s=\mathrm{up}\times f$ instead of
+   $f\times\mathrm{up}$ (so $s$ and $u$ change sign);
+   \textbf{bug 3}: \texttt{viewport}, the $y$ row $+H/2$ instead of $-H/2$ (the raster $y$ is not flipped).
+   \begin{figure}[h]\centering
+     \includegraphics[width=.9\linewidth]{B6_repro.jpg}
+     \caption{B6a, the start view reproduced with the errors planted in \texttt{perspective} (bug 1),
+       \texttt{look\_at} (bug 2) and \texttt{viewport} (bug 3).}\label{fig:b6}
+   \end{figure}}
+  {A negative $w$ makes the division by $w$ flip both $x$ and $y$, which turns the picture by $180^\circ$ (bug 1);
+   swapping the factors of the cross product negates the camera's right and up vectors, a $180^\circ$ roll of
+   the camera (bug 2); and without the minus sign the raster $y$ grows upward, which mirrors the picture top
+   to bottom (bug 3). The picture alone cannot tell bug 3 from a negated $P_{1,1}$ in \texttt{perspective}, or
+   bug 1 from a viewport that flips both axes; the orthographic view of B6b separates them.}
 
 \experiment{B6b}{Images 1 and 2}
-  {\todo{}}
-  {\todo{}}
-  {\todo{why the shading differs}}
+  {The orthographic camera (key \texttt{p}) tells them apart: an error in \texttt{perspective} disappears there,
+   because \texttt{ortho} is used instead, while an error in \texttt{look\_at} stays.}
+  {With the planted errors, the orthographic start view is identical to the correct one for bug 1 (difference
+   $0.000$) and still wrong for bug 2 ($8.3$; for bug 3 it is $9.1$). Bug 1 is exactly the correct picture
+   rotated by $180^\circ$, shading included ($0.20$), while bug 2 has the same geometry but a different shading
+   ($2.35$ to the rotated correct picture).}
+  {The viewer draws the vertices with \texttt{project}$(VP\,P\,V\,M)$, but shades and sorts the triangles using eye
+   coordinates computed from $V\,M$ (the light is fixed above left of the camera). An error in \texttt{perspective}
+   or \texttt{viewport} only moves the picture, so each face keeps its correct shade. An error in \texttt{look\_at}
+   changes the eye coordinates themselves, here by a $180^\circ$ roll, so the normals and the light direction no longer
+   match and other faces are lit.}
 
 \experiment{B6c}{World-axes mode turns about the object's axes}
-  {\todo{}}
-  {\todo{which function, which error}}
-  {\todo{}}
+  {The error is in \texttt{quat\_mul}, which returns the product in the other order.}
+  {With $q_1q_2$ computed as $q_2q_1$, the viewer's world-axes rule $q\leftarrow q_\Delta q$ is carried out as
+   $q\,q_\Delta$ and the object-axes rule as $q_\Delta q$: for the run \texttt{xxxyyy} of B2a the quaternion in the
+   world mode equals the correct one of the object mode, and vice versa (exact equality). A single sign error in
+   the vector part, $w_1\mathbf v_2+w_2\mathbf v_1-\mathbf v_1\times\mathbf v_2$ instead of $+$, gives exactly the reversed
+   product.}
+  {The viewer implements the two modes only by the order of the arguments of \texttt{quat\_mul}
+   ($q_\Delta q$ about the world axes, $q\,q_\Delta$ about the object axes), so a product that comes out in the
+   opposite order swaps the two modes: every key of the world-axes mode turns the airplane about its own axes, and
+   the other way round.}
 
 \end{document}
