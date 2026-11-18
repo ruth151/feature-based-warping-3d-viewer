@@ -8,7 +8,7 @@ warp-*.png
 warp-*.json
 # keep personal/submission files out of the repo
 *.zip
-report.pdf
+/report/report.pdf
 
 # LaTeX build files
 report/*.aux

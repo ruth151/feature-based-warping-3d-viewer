@@ -7,7 +7,7 @@
 
 % ---------------------------------------------------------------- fill these in
 \newcommand{\studentname}{Ruth Yegudaev}
-\newcommand{\studentid}{STUDENT\_ID}
+\def\studentid{}
 % the real ID lives in report/identity.tex, which is git-ignored (it is not part of the repository)
 \IfFileExists{identity.tex}{\input{identity.tex}}{}
 % ----------------------------------------------------------------
@@ -27,7 +27,7 @@
 \usepackage{xcolor}
 
 \title{Visual Computing -- Exercise 2\\[2pt]\large Feature-based warping and 3D viewing}
-\author{\studentname\ (ID \studentid)}
+\author{\studentname\ifx\studentid\empty\else\ (ID \studentid)\fi}
 \date{Fall semester 2026--27}
 
 \begin{document}

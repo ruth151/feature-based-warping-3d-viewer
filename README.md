@@ -22,6 +22,10 @@
   Right: one feature line translating, rotating and doubling in length, and the warp it defines.
 </sub></p>
 
+<p align="center">
+  <a href="docs/report.pdf"><b>📄 Read the full experiment report (PDF, 9 pages)</b></a>
+</p>
+
 ---
 
 ## Overview
@@ -107,8 +111,9 @@ python docs/make_gifs.py           # headless; writes docs/*.gif from the code i
 
 ## Experiments and write-up
 
-The `report/` folder holds the LaTeX source of the write-up (`pdflatex report.tex`): for every experiment a prediction made
-before running it, the measured result, and an explanation. A few findings:
+The full write-up is available as a PDF: **[docs/report.pdf](docs/report.pdf)** (9 pages). For every experiment it gives a prediction made
+before running it, the measured result, and an explanation. Its LaTeX source is in `report/` (`pdflatex report.tex`).
+A few findings:
 
 - With **one** feature line the parameters `a`, `b`, `p` cancel out of the weighted average, so they have no effect; they matter
   from two lines on.
@@ -126,7 +131,7 @@ before running it, the measured result, and an explanation. A few findings:
 | `ex2.py` | The implementation: all Part A and Part B functions |
 | `test_partA.py`, `test_partB.py` | My own tests for the two parts |
 | `repro_bugs.py` | Plants one error in a function to reproduce the three bug images |
-| `docs/` | README GIFs and the script that generates them |
+| `docs/` | The full report (`report.pdf`), the README GIFs and the script that generates them |
 | `report/` | LaTeX source of the experiment report and its figures |
 | `my_images/` | Output of the warp tool's "save frames": images, feature lines and morph frames |
 | `warptool.py`, `viewer.py`, `meshes.py`, `selftest.py`, `bugs/` | Interactive tools, meshes and images provided by the course |
