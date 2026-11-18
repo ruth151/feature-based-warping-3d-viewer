@@ -27,36 +27,53 @@ def _sample(img, pts, interp="bilinear"):
     img = np.asarray(img, dtype=float)
     pts = np.asarray(pts, dtype=float)
     H, W = img.shape[:2]
+    flat = img.reshape(H * W, -1)                      # (H*W) x C, C = 1 for gray
     x, y = pts[:, 0], pts[:, 1]
     eps = 1e-9
     if interp == "nearest":
-        xi = np.floor(x + 0.5).astype(int)
-        yi = np.floor(y + 0.5).astype(int)
+        xi = np.floor(x + 0.5).astype(np.intp)
+        yi = np.floor(y + 0.5).astype(np.intp)
         inside = (xi >= 0) & (xi < W) & (yi >= 0) & (yi < H)
-        out = img[np.clip(yi, 0, H - 1), np.clip(xi, 0, W - 1)]
+        out = flat[np.clip(yi, 0, H - 1) * W + np.clip(xi, 0, W - 1)]
+        out *= inside[:, None]
     elif interp == "bilinear":
         inside = (x >= -eps) & (x <= W - 1 + eps) & (y >= -eps) & (y <= H - 1 + eps)
         x = np.clip(x, 0, W - 1)
         y = np.clip(y, 0, H - 1)
-        x0 = np.minimum(np.floor(x).astype(int), max(W - 2, 0))
-        y0 = np.minimum(np.floor(y).astype(int), max(H - 2, 0))
-        x1 = np.minimum(x0 + 1, W - 1)
-        y1 = np.minimum(y0 + 1, H - 1)
-        fx, fy = x - x0, y - y0
-        if img.ndim == 3:
-            fx, fy = fx[:, None], fy[:, None]
-        out = ((1 - fy) * ((1 - fx) * img[y0, x0] + fx * img[y0, x1])
-               + fy * ((1 - fx) * img[y1, x0] + fx * img[y1, x1]))
+        x0 = np.minimum(x.astype(np.intp), max(W - 2, 0))   # x >= 0, so astype == floor
+        y0 = np.minimum(y.astype(np.intp), max(H - 2, 0))
+        fx = x - x0
+        fy = y - y0
+        i00 = y0 * W + x0
+        di = 1 if W > 1 else 0
+        dj = W if H > 1 else 0
+        # separable weights, with the "inside" mask folded in so no extra pass is needed
+        w11 = fx * fy
+        w10 = fy - w11                  # (1-fx) * fy
+        w01 = fx - w11                  # fx * (1-fy)
+        w00 = 1 - fx - fy + w11         # (1-fx) * (1-fy)
+        m = inside.astype(float)
+        out = (flat[i00] * (w00 * m)[:, None] + flat[i00 + di] * (w01 * m)[:, None]
+               + flat[i00 + dj] * (w10 * m)[:, None] + flat[i00 + dj + di] * (w11 * m)[:, None])
     else:
         raise ValueError(f"interp must be 'bilinear' or 'nearest', not {interp!r}")
-    out = np.where(inside[:, None] if img.ndim == 3 else inside, out, 0.0)
-    return out
+    return out.reshape(len(pts)) if img.ndim == 2 else out
+
+
+_GRID_CACHE = {}
 
 
 def _pixel_grid(H, W):
-    """The H*W x 2 array of pixel centers (x, y), in row-major order."""
-    ys, xs = np.mgrid[0:H, 0:W]
-    return np.stack([xs.ravel(), ys.ravel()], axis=1).astype(float)
+    """The H*W x 2 array of pixel centers (x, y), in row-major order (cached; do not modify)."""
+    g = _GRID_CACHE.get((H, W))
+    if g is None:
+        ys, xs = np.mgrid[0:H, 0:W]
+        g = np.stack([xs.ravel(), ys.ravel()], axis=1).astype(float)
+        g.flags.writeable = False
+        if len(_GRID_CACHE) > 8:
+            _GRID_CACHE.clear()
+        _GRID_CACHE[(H, W)] = g
+    return g
 
 
 def source_positions(X, src_lines, dst_lines, a, b, p):
@@ -64,31 +81,37 @@ def source_positions(X, src_lines, dst_lines, a, b, p):
     X = np.asarray(X, dtype=float).reshape(-1, 2)
     src = np.asarray(src_lines, dtype=float).reshape(-1, 2, 2)
     dst = np.asarray(dst_lines, dtype=float).reshape(-1, 2, 2)
-    P, Q = dst[:, 0], dst[:, 1]            # M x 2, the destination lines
-    Pp, Qp = src[:, 0], src[:, 1]          # M x 2, the source lines
     tiny = 1e-12
+    x, y = X[:, 0:1], X[:, 1:2]                              # N x 1
 
-    d = Q - P
-    len2 = np.maximum((d ** 2).sum(axis=1), tiny)          # M
+    # per-line quantities, each as a 1 x M row
+    Px, Py = dst[:, 0, 0][None], dst[:, 0, 1][None]
+    Qx, Qy = dst[:, 1, 0][None], dst[:, 1, 1][None]
+    dx, dy = Qx - Px, Qy - Py
+    len2 = np.maximum(dx * dx + dy * dy, tiny)
     length = np.sqrt(len2)
-    dp = Qp - Pp
-    lenp = np.sqrt(np.maximum((dp ** 2).sum(axis=1), tiny))
+    Ppx, Ppy = src[:, 0, 0][None], src[:, 0, 1][None]
+    dpx, dpy = src[:, 1, 0][None] - Ppx, src[:, 1, 1][None] - Ppy
+    lenp = np.sqrt(np.maximum(dpx * dpx + dpy * dpy, tiny))
 
-    rel = X[:, None, :] - P[None]                          # N x M x 2
-    u = (rel * d[None]).sum(axis=2) / len2[None]           # N x M
-    v = (rel * _perp(d)[None]).sum(axis=2) / length[None]  # N x M, signed distance
+    rx, ry = x - Px, y - Py                                  # N x M
+    u = (rx * dx + ry * dy) / len2
+    v = (-rx * dy + ry * dx) / length                        # signed distance, perp(d) = (-dy, dx)
 
-    # X'_i, the source position that line i alone gives
-    Xi = Pp[None] + u[..., None] * dp[None] + v[..., None] * (_perp(dp) / lenp[:, None])[None]
+    # X'_i - X: the displacement that line i alone gives (perp(dp) = (-dpy, dpx))
+    Dx = Ppx + u * dpx - v * dpy / lenp - x
+    Dy = Ppy + u * dpy + v * dpx / lenp - y
 
-    # distance from X to the destination segment
-    to_P = np.sqrt((rel ** 2).sum(axis=2))
-    to_Q = np.sqrt(((X[:, None, :] - Q[None]) ** 2).sum(axis=2))
-    dist = np.where(u < 0, to_P, np.where(u > 1, to_Q, np.abs(v)))
+    # distance from X to the destination segment: |v| if 0 <= u <= 1, else to the nearer endpoint.
+    # Both cases are the distance to the closest point P + clip(u, 0, 1) d of the segment.
+    cu = np.clip(u, 0.0, 1.0)
+    dist = np.hypot(rx - cu * dx, ry - cu * dy)
 
-    w = (length[None] ** p / (a + dist)) ** b              # N x M
-    D = Xi - X[:, None, :]
-    return X + (w[..., None] * D).sum(axis=1) / w.sum(axis=1)[:, None]
+    base = length ** p / (a + dist)                          # N x M
+    w = base * base if b == 2 else base ** b
+    sw = w.sum(axis=1)
+    return np.stack([X[:, 0] + (w * Dx).sum(axis=1) / sw,
+                     X[:, 1] + (w * Dy).sum(axis=1) / sw], axis=1)
 
 
 def warp_lines(img, src_lines, dst_lines, a, b, p, interp="bilinear"):
@@ -147,23 +170,135 @@ def warp_matrix(img, M, interp="bilinear"):
 
 
 # Part B
-def translate(tx, ty, tz): ...      # 4x4 translation
-def scale(sx, sy, sz): ...          # 4x4 scaling
-def rotate(axis, angle): ...        # 4x4 rotation about a unit axis (Rodrigues)
-def euler(ax, ay, az): ...          # 4x4: Rz(az) @ Ry(ay) @ Rx(ax)
+def _unit(v):
+    v = np.asarray(v, dtype=float)
+    return v / np.linalg.norm(v)
 
-def quat(axis, angle): ...          # unit quaternion of the rotation about a unit axis
-def quat_mul(q1, q2): ...           # the product q1 q2
-def quat_to_matrix(q): ...          # 4x4 rotation matrix of the unit quaternion q
-def slerp(q0, q1, t): ...           # spherical linear interpolation, t in [0, 1]
+
+def translate(tx, ty, tz):       # 4x4 translation
+    T = np.eye(4)
+    T[:3, 3] = (tx, ty, tz)
+    return T
+
+
+def scale(sx, sy, sz):           # 4x4 scaling
+    return np.diag([sx, sy, sz, 1.0])
+
+
+def rotate(axis, angle):         # 4x4 rotation about a unit axis (Rodrigues)
+    k = _unit(axis)
+    th = np.radians(angle)
+    c, s = np.cos(th), np.sin(th)
+    K = np.array([[0, -k[2], k[1]],
+                  [k[2], 0, -k[0]],
+                  [-k[1], k[0], 0]])                      # K v = k x v
+    R = np.eye(4)
+    R[:3, :3] = c * np.eye(3) + s * K + (1 - c) * np.outer(k, k)
+    return R
+
+
+def euler(ax, ay, az):           # 4x4: Rz(az) @ Ry(ay) @ Rx(ax)
+    return rotate((0, 0, 1), az) @ rotate((0, 1, 0), ay) @ rotate((1, 0, 0), ax)
+
+
+def quat(axis, angle):           # unit quaternion of the rotation about a unit axis
+    half = np.radians(angle) / 2
+    return np.concatenate([[np.cos(half)], np.sin(half) * _unit(axis)])
+
+
+def quat_mul(q1, q2):            # the product q1 q2
+    w1, x1, y1, z1 = np.asarray(q1, dtype=float)
+    w2, x2, y2, z2 = np.asarray(q2, dtype=float)
+    return np.array([w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+                     w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+                     w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+                     w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2])
+
+
+def quat_to_matrix(q):           # 4x4 rotation matrix of the unit quaternion q
+    w, x, y, z = _unit(q)
+    R = np.eye(4)
+    R[:3, :3] = [[1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+                 [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+                 [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]]
+    return R
+
+
+def slerp(q0, q1, t):            # spherical linear interpolation, t in [0, 1]
     # along the great arc from q0 to q1 as given (do not replace q1 by -q1)
+    q0 = np.asarray(q0, dtype=float)
+    q1 = np.asarray(q1, dtype=float)
+    dot = float(np.clip(q0 @ q1, -1.0, 1.0))
+    omega = np.arccos(dot)                      # the angle of the arc, in [0, pi]
+    sin_o = np.sin(omega)
+    if sin_o < 1e-8:
+        if dot > 0:                             # the same quaternion: nothing to interpolate
+            q = (1 - t) * q0 + t * q1
+            return q / np.linalg.norm(q)
+        # antipodal: every great circle through q0 and -q1 is an arc; take one of them
+        e = np.zeros(4)
+        e[np.argmin(np.abs(q0))] = 1.0
+        r = _unit(e - (e @ q0) * q0)
+        return np.cos(np.pi * t) * q0 + np.sin(np.pi * t) * r
+    return (np.sin((1 - t) * omega) * q0 + np.sin(t * omega) * q1) / sin_o
 
-def look_at(eye, target, up): ...   # 4x4 view matrix, world -> eye
-def ortho(l, r, b, t, near, far): ...           # 4x4, OpenGL convention
-def perspective(fovy, aspect, near, far): ...   # 4x4, OpenGL convention
-def viewport(W, H): ...             # 4x4: NDC -> raster x, y and depth
-def project(M, pts): ...            # Nx3 -> Nx3: apply the 4x4 M, divide by w
 
-def pixel_ray(M, x, y): ...         # (o, d): the ray of the world points that the 4x4 M
+def look_at(eye, target, up):    # 4x4 view matrix, world -> eye
+    eye = np.asarray(eye, dtype=float)
+    f = _unit(np.asarray(target, dtype=float) - eye)           # viewing direction (the camera's -z)
+    s = np.cross(f, np.asarray(up, dtype=float))               # the camera's right
+    if np.linalg.norm(s) < 1e-12:                              # up parallel to the viewing direction
+        s = np.cross(f, [1.0, 0.0, 0.0] if abs(f[0]) < 0.9 else [0.0, 0.0, 1.0])
+    s = _unit(s)
+    u = np.cross(s, f)                                         # the camera's up
+    V = np.eye(4)
+    V[0, :3], V[1, :3], V[2, :3] = s, u, -f
+    V[:3, 3] = -V[:3, :3] @ eye
+    return V
+
+
+def ortho(l, r, b, t, near, far):            # 4x4, OpenGL convention
+    return np.array([[2 / (r - l), 0, 0, -(r + l) / (r - l)],
+                     [0, 2 / (t - b), 0, -(t + b) / (t - b)],
+                     [0, 0, -2 / (far - near), -(far + near) / (far - near)],
+                     [0, 0, 0, 1.0]])
+
+
+def perspective(fovy, aspect, near, far):    # 4x4, OpenGL convention
+    f = 1.0 / np.tan(np.radians(fovy) / 2)
+    return np.array([[f / aspect, 0, 0, 0],
+                     [0, f, 0, 0],
+                     [0, 0, (far + near) / (near - far), 2 * far * near / (near - far)],
+                     [0, 0, -1, 0]])
+
+
+def viewport(W, H):              # 4x4: NDC -> raster x, y and depth
+    return np.array([[W / 2, 0, 0, W / 2],
+                     [0, -H / 2, 0, H / 2],
+                     [0, 0, 0.5, 0.5],
+                     [0, 0, 0, 1.0]])
+
+
+def project(M, pts):             # Nx3 -> Nx3: apply the 4x4 M, divide by w
+    pts = np.asarray(pts, dtype=float)
+    h = np.hstack([pts.reshape(-1, 3), np.ones((pts.size // 3, 1))]) @ np.asarray(M, dtype=float).T
+    return (h[:, :3] / h[:, 3:4]).reshape(pts.shape)
+
+
+def pixel_ray(M, x, y):          # (o, d): the ray of the world points that the 4x4 M
     # (viewport @ P @ V) takes to raster (x, y): o at depth 0, d unit, toward depth 1
-def chase_view(M): ...              # 4x4 view matrix of the chase camera of B5
+    Minv = np.linalg.inv(np.asarray(M, dtype=float))
+    ends = []
+    for depth in (0.0, 1.0):
+        h = Minv @ np.array([x, y, depth, 1.0])
+        ends.append(h[:3] / h[3])
+    o = ends[0]
+    return o, _unit(ends[1] - o)
+
+
+def chase_view(M):               # 4x4 view matrix of the chase camera of B5
+    M = np.asarray(M, dtype=float)
+    eye = (M @ np.array([0.0, 2.0, -8.0, 1.0]))[:3]      # a point: behind and above the airplane
+    target = (M @ np.array([0.0, 0.0, 0.0, 1.0]))[:3]    # a point: the airplane's center
+    up = M[:3, :3] @ np.array([0.0, 1.0, 0.0])           # a direction: the airplane's +y
+    return look_at(eye, target, up)

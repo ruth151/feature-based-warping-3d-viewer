@@ -9,3 +9,9 @@ warp-*.json
 # keep personal/submission files out of the repo
 *.zip
 report.pdf
+
+# LaTeX build files
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
