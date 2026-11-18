@@ -8,6 +8,8 @@
 % ---------------------------------------------------------------- fill these in
 \newcommand{\studentname}{Ruth Yegudaev}
 \newcommand{\studentid}{STUDENT\_ID}
+% the real ID lives in report/identity.tex, which is git-ignored (it is not part of the repository)
+\IfFileExists{identity.tex}{\input{identity.tex}}{}
 % ----------------------------------------------------------------
 
 \graphicspath{{figures/}}

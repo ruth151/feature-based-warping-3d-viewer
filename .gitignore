@@ -15,3 +15,6 @@ report/*.aux
 report/*.log
 report/*.out
 report/*.toc
+
+# personal details used by the report (kept out of the repository)
+report/identity.tex
